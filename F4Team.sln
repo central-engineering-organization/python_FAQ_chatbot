@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30225.117
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "F4Team", "F4Team\F4Team.csproj", "{5200F6E0-293F-4A1B-B18B-37C3903E7F12}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{B0DA2956-7203-4F68-A2F5-4039367A86BE}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		Scripts\git_hooks\pre-commit = Scripts\git_hooks\pre-commit
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5200F6E0-293F-4A1B-B18B-37C3903E7F12}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5200F6E0-293F-4A1B-B18B-37C3903E7F12}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5200F6E0-293F-4A1B-B18B-37C3903E7F12}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5200F6E0-293F-4A1B-B18B-37C3903E7F12}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {35DF54AE-80E8-47F0-9507-C8CE3EA56BF5}
+	EndGlobalSection
+EndGlobal
