@@ -12,6 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 using F4Team.Bots;
+using Microsoft.Bot.Builder.Azure;
+using System;
 
 namespace F4Team
 {
@@ -34,6 +36,16 @@ namespace F4Team
 
             // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
             services.AddTransient<IBot, EchoBot>();
+
+            // Cosmos DB setting
+            EchoBot.query = new CosmosDbPartitionedStorage(new CosmosDbPartitionedStorageOptions
+            {
+                CosmosDbEndpoint = Configuration.GetValue<string>("CosmosDbEndPoint"),
+                AuthKey = Configuration.GetValue<string>("AuthKey"),
+                DatabaseId = Configuration.GetValue<string>("DatabaseId"),
+                ContainerId = Configuration.GetValue<string>("ContainerId"),
+                CompatibilityMode = Configuration.GetValue<bool>("CompatibilityMode"),
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

@@ -3,46 +3,81 @@
 //
 // Generated with Bot Builder V4 SDK Template for Visual Studio EchoBot v4.9.2
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Configuration;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Builder;
+using Microsoft.Bot.Builder.Azure;
 using Microsoft.Bot.Schema;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Primitives;
 
 namespace F4Team.Bots
 {
     public class EchoBot : ActivityHandler
     {
-        private Hashtable table;
+        public static CosmosDbPartitionedStorage query;
+        public CancellationToken cancellationToken { get; private set; }
+
+        public class FunctionItem : IStoreItem
+        {
+            public string name { get; set; }
+            public string description { get; set; }
+            public string ETag { get; set; } = "*";
+        }
         public EchoBot()
         {
-            table = new Hashtable();
-            table.Add("안녕", "안녕하세요. 좋은 하루 입니다.");
-            table.Add("버전", "현재 파이썬 버전은 3입니다.");
-            table.Add("레퍼런스", "https://docs.python.org/ko/3/reference/index.html 참조해주세요.");
+            /* None */
+        }
+
+        private async Task writeDataToDb(FunctionItem[] functionItems)
+        {
+            if (query == null) { Console.WriteLine("NULL"); }
+            var changes = new Dictionary<string, object>();
+            changes.Add("function_list", functionItems);
+            await query.WriteAsync(changes, cancellationToken);
         }
 
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
             string replyText;
             string question = "";
+            Dictionary<string, string> functionDict = null;
+            string[] idList = { "function_list" };
+            FunctionItem[] functionItems = null;
+            functionItems = query.ReadAsync<FunctionItem[]>(idList).Result?.FirstOrDefault().Value;
+            if (!(functionItems is null)) {
+                functionDict = new Dictionary<string, string>();
+                functionDict = functionItems.ToDictionary(x => x.name, x => x.description);
+            }
 
-            foreach (string key in table.Keys)
+            if (!(functionDict is null))
             {
-                if (turnContext.Activity.Text.Contains(key))
+                string str = turnContext.Activity.Text;
+                str = Regex.Replace(str, @"[^a-zA-Z_]", "");
+                string[] textList = str.Split(" ");
+                foreach (string key in functionDict.Keys)
                 {
-                    question = key;
+                    if (textList.Any(text => text == key))
+                    {
+                        question = key;
+                        break;
+                    }
                 }
             }
 
             if (question.Length > 0)
             {
-                replyText = table[question] as string;
+                replyText = functionDict[question] as string;
             }
             else
             {
-                replyText = $"현재 등록되지 않은 질의문: {turnContext.Activity.Text}";
+                replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {turnContext.Activity.Text}";
             }
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
         }
