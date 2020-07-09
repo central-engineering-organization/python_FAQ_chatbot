@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using F4Team.Bots;
 using Microsoft.Bot.Builder.Azure;
 using System;
+using Microsoft.Bot.Builder.AI.QnA;
 
 namespace F4Team
 {
@@ -46,6 +47,14 @@ namespace F4Team
                 ContainerId = Configuration.GetValue<string>("ContainerId"),
                 CompatibilityMode = Configuration.GetValue<bool>("CompatibilityMode"),
             });
+
+            services.AddSingleton(new QnAMakerEndpoint
+            {
+                KnowledgeBaseId = Configuration.GetValue<string>($"QnAKnowledgebaseId"),
+                EndpointKey = Configuration.GetValue<string>($"QnAEndpointKey"),
+                Host = Configuration.GetValue<string>($"QnAEndpointHostName")
+            });
+
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

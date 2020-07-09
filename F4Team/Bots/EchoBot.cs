@@ -8,14 +8,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Builder;
+using Microsoft.Bot.Builder.AI.QnA;
 using Microsoft.Bot.Builder.Azure;
 using Microsoft.Bot.Schema;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Primitives;
 
 namespace F4Team.Bots
 {
@@ -30,10 +30,14 @@ namespace F4Team.Bots
             public string description { get; set; }
             public string ETag { get; set; } = "*";
         }
-        public EchoBot()
+
+        public QnAMaker EchoBotQnA { get; private set; }
+
+        public EchoBot(QnAMakerEndpoint endpoint)
         {
-            /* None */
+            EchoBotQnA = new QnAMaker(endpoint);
         }
+
 
         private async Task writeDataToDb(FunctionItem[] functionItems)
         {
@@ -46,38 +50,46 @@ namespace F4Team.Bots
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
             string replyText;
-            string question = "";
-            Dictionary<string, string> functionDict = null;
-            string[] idList = { "function_list" };
-            FunctionItem[] functionItems = null;
-            functionItems = query.ReadAsync<FunctionItem[]>(idList).Result?.FirstOrDefault().Value;
-            if (!(functionItems is null)) {
-                functionDict = new Dictionary<string, string>();
-                functionDict = functionItems.ToDictionary(x => x.name, x => x.description);
-            }
-
-            if (!(functionDict is null))
+            var qnaResults = await EchoBotQnA.GetAnswersAsync(turnContext);
+            if (!qnaResults.Any())
             {
-                string str = turnContext.Activity.Text;
-                str = Regex.Replace(str, @"[^a-zA-Z_]", "");
-                string[] textList = str.Split(" ");
-                foreach (string key in functionDict.Keys)
+                string question = "";
+                Dictionary<string, string> functionDict = null;
+                string[] idList = { "function_list" };
+                FunctionItem[] functionItems = null;
+                functionItems = query.ReadAsync<FunctionItem[]>(idList).Result?.FirstOrDefault().Value;
+                if (!(functionItems is null))
                 {
-                    if (textList.Any(text => text == key))
+                    functionDict = new Dictionary<string, string>();
+                    functionDict = functionItems.ToDictionary(x => x.name, x => x.description);
+                }
+
+                if (!(functionDict is null))
+                {
+                    string str = turnContext.Activity.Text;
+                    str = Regex.Replace(str, @"[^a-zA-Z_]", "");
+                    string[] textList = str.Split(" ");
+                    foreach (string key in functionDict.Keys)
                     {
-                        question = key;
-                        break;
+                        if (textList.Any(text => text == key))
+                        {
+                            question = key;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (question.Length > 0)
+                if (question.Length > 0)
+                {
+                    replyText = functionDict[question] as string;
+                }
+                else
+                {
+                    replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {turnContext.Activity.Text}";
+                }
+            } else
             {
-                replyText = functionDict[question] as string;
-            }
-            else
-            {
-                replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {turnContext.Activity.Text}";
+                replyText = qnaResults.First().Answer;
             }
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
         }
