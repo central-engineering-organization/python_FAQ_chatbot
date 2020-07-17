@@ -55,6 +55,11 @@ namespace F4Team
                 Host = Configuration.GetValue<string>($"QnAEndpointHostName")
             });
 
+            // Create the storage we'll be using for User and Conversation state. (Memory is great for testing purposes.)
+            services.AddSingleton<IStorage, MemoryStorage>();
+
+            // Create the User state.
+            services.AddSingleton<UserState>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

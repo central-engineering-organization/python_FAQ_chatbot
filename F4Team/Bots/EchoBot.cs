@@ -22,6 +22,9 @@ namespace F4Team.Bots
     public class EchoBot : ActivityHandler
     {
         public static CosmosDbPartitionedStorage query;
+
+        private BotState _userState;
+
         public CancellationToken cancellationToken { get; private set; }
 
         public class FunctionItem : IStoreItem
@@ -33,9 +36,10 @@ namespace F4Team.Bots
 
         public QnAMaker EchoBotQnA { get; private set; }
 
-        public EchoBot(QnAMakerEndpoint endpoint)
+        public EchoBot(QnAMakerEndpoint endpoint, UserState userState)
         {
             EchoBotQnA = new QnAMaker(endpoint);
+            _userState = userState;
         }
 
 
@@ -45,6 +49,26 @@ namespace F4Team.Bots
             var changes = new Dictionary<string, object>();
             changes.Add("function_list", functionItems);
             await query.WriteAsync(changes, cancellationToken);
+        }
+
+        public override async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken)
+        {
+            var welcomeUserStateAccessor = _userState.CreateProperty<WelcomeUserState>(nameof(WelcomeUserState));
+            var didBotWelcomeUser = await welcomeUserStateAccessor.GetAsync(turnContext, () => new WelcomeUserState());
+
+            if (didBotWelcomeUser.DidBotWelcomeUser == false)
+            {
+                didBotWelcomeUser.DidBotWelcomeUser = true;
+                var welcomeText = $"Welcome Test";
+                await turnContext.SendActivityAsync(MessageFactory.Text(welcomeText, welcomeText), cancellationToken);
+            }
+            else
+            {
+                await base.OnTurnAsync(turnContext, cancellationToken);
+            }
+
+            // Save any state changes.
+            await _userState.SaveChangesAsync(turnContext);
         }
 
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
@@ -94,16 +118,16 @@ namespace F4Team.Bots
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
         }
 
-        protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
-        {
-            foreach (var member in membersAdded)
-            {
-                if (member.Id != turnContext.Activity.Recipient.Id)
-                {
-                    var welcomeText = $"어서오세요! 파이썬 관련 내용을 알려드립니다.";
-                    await turnContext.SendActivityAsync(MessageFactory.Text(welcomeText, welcomeText), cancellationToken);
-                }
-            }
-        }
+        //protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
+        //{
+        //    foreach (var member in membersAdded)
+        //    {
+        //        if (member.Id != turnContext.Activity.Recipient.Id)
+        //        {
+        //            var welcomeText = $"어서오세요! 파이썬 관련 내용을 알려드립니다.";
+        //            await turnContext.SendActivityAsync(MessageFactory.Text(welcomeText, welcomeText), cancellationToken);
+        //        }
+        //    }
+        //}
     }
 }
