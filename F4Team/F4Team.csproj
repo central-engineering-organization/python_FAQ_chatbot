@@ -27,4 +27,6 @@
       <Exec Command="if $(ConfigurationName) == Debug node ../Scripts/init.js" />
     </Target>
 
+    <ProjectExtensions><VisualStudio><UserProperties appsettings_1json__JsonSchema="" /></VisualStudio></ProjectExtensions>
+
 </Project>
