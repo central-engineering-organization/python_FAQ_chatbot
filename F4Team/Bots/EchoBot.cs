@@ -9,11 +9,11 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Net.Http;
-using System.Web;
 using System.Net.NetworkInformation;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.AI.QnA;
 using Microsoft.Bot.Builder.Azure;
@@ -32,6 +32,9 @@ namespace F4Team.Bots
         public static IConfiguration Configuration;
         public CancellationToken cancellationToken { get; private set; }
 
+        /// <summary>
+        /// CosmosDB로 부터 값을 가져오는 데 사용되는 클래스에 해당합니다.
+        /// </summary>
         public class FunctionItem : IStoreItem
         {
             public string name { get; set; }
@@ -39,21 +42,28 @@ namespace F4Team.Bots
             public string ETag { get; set; } = "*";
         }
 
+        /// <summary>
+        /// 챗봇의 QnAMaker에 해당합니다.
+        /// </summary>
         public QnAMaker EchoBotQnA { get; private set; }
 
+        /// <summary>
+        /// 챗봇의 생성자에 해당합니다.
+        /// </summary>
+        /// <param name="conversationState"> 대화의 상태 정보를 가지고 있습니다. </param>
+        /// <param name="userState"> 사용자의 상태 정보를 가지고 있습니다. </param>
+        /// <param name="endpoint"> QnAMaker의 EndPoint 정보를 가지고 있습니다. </param>
         public EchoBot(ConversationState conversationState, UserState userState, QnAMakerEndpoint endpoint)
         {
             EchoBotQnA = new QnAMaker(endpoint);
             ConversationState = conversationState;
             UserState = userState;
         }
-        public override async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken = default)
-        {
-            await base.OnTurnAsync(turnContext, cancellationToken);
 
-            // Save any state changes that might have occured during the turn.
-            await ConversationState.SaveChangesAsync(turnContext, false, cancellationToken);
-            await UserState.SaveChangesAsync(turnContext, false, cancellationToken);
+        public class WelcomeUserState
+        {
+            // Gets or sets whether the user has been welcomed in the conversation.
+            public bool DidBotWelcomeUser { get; set; } = false;
         }
 
 #if DATABASE_WRITE_TEST
@@ -65,6 +75,26 @@ namespace F4Team.Bots
             await query.WriteAsync(changes, cancellationToken);
         }
 #endif
+
+        public override async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken)
+        {
+            var welcomeUserStateAccessor = UserState.CreateProperty<WelcomeUserState>(nameof(WelcomeUserState));
+            var didBotWelcomeUser = await welcomeUserStateAccessor.GetAsync(turnContext, () => new WelcomeUserState());
+
+            if (didBotWelcomeUser.DidBotWelcomeUser == false)
+            {
+                didBotWelcomeUser.DidBotWelcomeUser = true;
+                var welcomeText = $"어서오세요! 파이썬 관련 내용을 알려드립니다.";
+                await turnContext.SendActivityAsync(MessageFactory.Text(welcomeText, welcomeText), cancellationToken);
+            }
+            else
+            {
+                await base.OnTurnAsync(turnContext, cancellationToken);
+            }
+
+            // Save any state changes.
+            await UserState.SaveChangesAsync(turnContext);
+        }
 
         private async Task<JObject> makeRequest(string predictionKey, string predictionEndpoint, string appId, string utterance)
         {
@@ -97,7 +127,8 @@ namespace F4Team.Bots
             string replyText = turnContext.Activity.Text;
             var qnaResults = await EchoBotQnA.GetAnswersAsync(turnContext);
 
-            if (!qnaResults.Any()) {
+            if (!qnaResults.Any())
+            {
                 string predictionKey = Configuration.GetValue<string>("LuisPredictionKey");
                 string predictionEndPoint = Configuration.GetValue<string>("LuisPredictionEndPoint");
                 string appId = Configuration.GetValue<string>("LuisId");
@@ -145,7 +176,8 @@ namespace F4Team.Bots
                     replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {replyText}";
                 }
                 await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
-            } else
+            }
+            else
             {
                 replyText = qnaResults.First().Answer;
                 if (qnaResults.First().Context.Prompts.Length > 0)
@@ -161,12 +193,25 @@ namespace F4Team.Bots
                     }
                     var reply = MessageFactory.Attachment(card.ToAttachment());
                     await turnContext.SendActivityAsync(reply, cancellationToken);
-                } else {
+                }
+                else
+                {
                     var reply = MessageFactory.Text(replyText, replyText);
                     await turnContext.SendActivityAsync(reply, cancellationToken);
                 }
             }
         }
+
+#if DEFAULT_MEMBER_ADD
+        public override async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken = default)
+        {
+            await base.OnTurnAsync(turnContext, cancellationToken);
+
+            // Save any state changes that might have occured during the turn.
+            await ConversationState.SaveChangesAsync(turnContext, false, cancellationToken);
+            await UserState.SaveChangesAsync(turnContext, false, cancellationToken);
+        }
+
 
         protected override async Task OnMembersAddedAsync(IList<ChannelAccount> membersAdded, ITurnContext<IConversationUpdateActivity> turnContext, CancellationToken cancellationToken)
         {
@@ -179,5 +224,6 @@ namespace F4Team.Bots
                 }
             }
         }
+#endif
     }
 }
