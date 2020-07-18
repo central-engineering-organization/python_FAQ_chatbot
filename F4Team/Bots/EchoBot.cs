@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.AI.QnA;
 using Microsoft.Bot.Builder.Azure;
@@ -152,8 +153,10 @@ namespace F4Team.Bots
                 string predictionEndPoint = Configuration.GetValue<string>("LuisPredictionEndPoint");
                 string appId = Configuration.GetValue<string>("LuisId");
                 JObject json = await makeRequest(predictionKey, predictionEndPoint, appId, turnContext.Activity.Text);
-                turnContext.Activity.Text = json["prediction"].Value<string>("topIntent");
-                if (turnContext.Activity.Text != "None") // "None"은 LUIS도 모르는 질의문을 의미합니다.
+                var topIntent = json["prediction"].Value<string>("topIntent");
+                var prediction = json["prediction"]["intents"][topIntent].Value<Double>("score");
+                turnContext.Activity.Text = topIntent;
+                if (turnContext.Activity.Text != "None" && prediction > 0.6) // "None"은 LUIS도 모르는 질의문을 의미합니다.
                 {
                     qnaResults = await EchoBotQnA.GetAnswersAsync(turnContext);
                 }
@@ -217,8 +220,27 @@ namespace F4Team.Bots
                 }
                 else // 버튼이 필요 없는 경우에 해당합니다.
                 {
-                    var reply = MessageFactory.Text(replyText, replyText);
-                    await turnContext.SendActivityAsync(reply, cancellationToken);
+                    MatchCollection matches = Regex.Matches(replyText, "\\{\\{[ ]*[a-zA-Z0-9_\\.\\(\\)]*[ ]*\\}\\}");
+                    if (matches.Count > 0)
+                    {
+                        var card = new HeroCard
+                        {
+                            Text = "요청하신 내용과 관계있는 결과입니다.",
+                            Buttons = new List<CardAction>(),
+                        };
+                        foreach (Match match in matches)
+                        {
+                            string value = match.Value.Replace("{", "").Replace("}", "").Trim();
+                            card.Buttons.Add(new CardAction(ActionTypes.ImBack, title: value, value: value));
+                        }
+                        var reply = MessageFactory.Attachment(card.ToAttachment());
+                        await turnContext.SendActivityAsync(reply, cancellationToken);
+                    }
+                    else
+                    {
+                        var reply = MessageFactory.Text(replyText, replyText);
+                        await turnContext.SendActivityAsync(reply, cancellationToken);
+                    }
                 }
             }
         }
