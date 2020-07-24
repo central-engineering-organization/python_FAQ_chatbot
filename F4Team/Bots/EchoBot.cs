@@ -195,7 +195,7 @@ namespace F4Team.Bots
             }
 
             string str = queryText;
-            str = Regex.Replace(str, @"[^a-zA-Z_.]", "");
+            str = Regex.Replace(str, @"[^a-zA-Z0-9_.]", "");
             string[] textList = str.Split(" ");
             foreach (string key in functionDict.Keys)
             {
