@@ -145,104 +145,134 @@ namespace F4Team.Bots
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
             string replyText = turnContext.Activity.Text;
+
+            string question = "";
+            Dictionary<string, string> functionDict = null;
+            string[] idList = { "function_list" }; // 테이블 이름 정보가 들어갑니다.
+            FunctionItem[] functionItems = null;
+            // 데이터베이스에서 데이터를 조회를 하도록 합니다.
+            functionItems = query.ReadAsync<FunctionItem[]>(idList).Result?.FirstOrDefault().Value;
+            if (!(functionItems is null)) // 데이터베이스에 데이터가 있는 경우
+            {
+                functionDict = new Dictionary<string, string>();
+                functionDict = functionItems.ToDictionary(x => x.name, x => x.description);
+            }
+
+            if (!(functionDict is null)) // 데이터로부터 딕셔너리를 만든 경우
+            {
+                string str = replyText;
+                str = Regex.Replace(str, @"[^a-zA-Z_.]", "");
+                string[] textList = str.Split(" ");
+                foreach (string key in functionDict.Keys)
+                {
+                    if (textList.Any(text => text == key))
+                    {
+                        question = key;
+                        break;
+                    }
+                }
+            }
+
+            IMessageActivity reply;
+            if (question.Length > 0) // 데이터베이스에서 답을 찾은 경우
+            {
+                reply = FunctionInfoReply(question, functionDict);
+            }
+            else // 데이터베이스에서 답을 찾지 못한 경우
+            {
+                reply = await QnAMakerReply(turnContext, replyText);
+            }
+            await turnContext.SendActivityAsync(reply, cancellationToken);
+        }
+
+        private static IMessageActivity FunctionInfoReply(string question, Dictionary<string, string> functionDict)
+        {
+            var replyText = functionDict[question] as string;
+            return MessageFactory.Text(replyText, replyText);
+        }
+
+        private async Task<IMessageActivity> QnAMakerReply(ITurnContext<IMessageActivity> turnContext, string replyText)
+        {
             var qnaResults = await EchoBotQnA.GetAnswersAsync(turnContext);
 
             if (!qnaResults.Any()) // QnAMaker가 이해하기 힘든 형태의 질의문의 경우
             {
-                string predictionKey = Configuration.GetValue<string>("LuisPredictionKey");
-                string predictionEndPoint = Configuration.GetValue<string>("LuisPredictionEndPoint");
-                string appId = Configuration.GetValue<string>("LuisId");
-                JObject json = await makeRequest(predictionKey, predictionEndPoint, appId, turnContext.Activity.Text);
-                var topIntent = json["prediction"].Value<string>("topIntent");
-                var prediction = json["prediction"]["intents"][topIntent].Value<Double>("score");
-                turnContext.Activity.Text = topIntent;
-                if (turnContext.Activity.Text != "None" && prediction > 0.6) // "None"은 LUIS도 모르는 질의문을 의미합니다.
-                {
-                    qnaResults = await EchoBotQnA.GetAnswersAsync(turnContext);
-                }
+                qnaResults = await ClarifyUsingLuis(turnContext, qnaResults);
             }
 
-            if (!qnaResults.Any()) // QnAMaker로는 답변을 찾을 수 없는 경우에 사용됩니다.
-            {
-                string question = "";
-                Dictionary<string, string> functionDict = null;
-                string[] idList = { "function_list" }; // 테이블 이름 정보가 들어갑니다.
-                FunctionItem[] functionItems = null;
-                // 데이터베이스에서 데이터를 조회를 하도록 합니다.
-                functionItems = query.ReadAsync<FunctionItem[]>(idList).Result?.FirstOrDefault().Value;
-                if (!(functionItems is null)) // 데이터베이스에 데이터가 있는 경우
-                {
-                    functionDict = new Dictionary<string, string>();
-                    functionDict = functionItems.ToDictionary(x => x.name, x => x.description);
-                }
-
-                if (!(functionDict is null)) // 데이터로부터 딕셔너리를 만든 경우
-                {
-                    string str = replyText;
-                    str = Regex.Replace(str, @"[^a-zA-Z_]", "");
-                    string[] textList = str.Split(" ");
-                    foreach (string key in functionDict.Keys)
-                    {
-                        if (textList.Any(text => text == key))
-                        {
-                            question = key;
-                            break;
-                        }
-                    }
-                }
-
-                if (question.Length > 0) // 데이터베이스에서 답을 찾은 경우
-                {
-                    replyText = functionDict[question] as string;
-                }
-                else // 데이터베이스에서 답을 찾지 못한 경우
-                {
-                    replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {replyText}";
-                }
-                await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
-            }
-            else // QnAMaker가 답을 아는 경우입니다.
+            if (qnaResults.Any()) // QnAMaker가 답을 아는 경우입니다.
             {
                 replyText = qnaResults.First().Answer; // 가장 유사도가 높은 답을 가져옵니다.
-                if (qnaResults.First().Context.Prompts.Length > 0) // 버튼을 만들어야 하는 지 확인해보도록 합니다.
+                MatchCollection functionNotationMatches = Regex.Matches(replyText, "\\{\\{[ ]*[a-zA-Z0-9_\\.\\(\\)]*[ ]*\\}\\}");
+                if (functionNotationMatches.Count > 0) // 함수 버튼을 만들어야 하는 지 확인해보도록 합니다.
                 {
-                    var card = new HeroCard
-                    {
-                        Text = replyText,
-                        Buttons = new List<CardAction>(),
-                    };
-                    foreach (var prompt in qnaResults.First().Context.Prompts)
-                    {
-                        card.Buttons.Add(new CardAction(ActionTypes.ImBack, title: prompt.DisplayText, value: prompt.DisplayText));
-                    }
-                    var reply = MessageFactory.Attachment(card.ToAttachment());
-                    await turnContext.SendActivityAsync(reply, cancellationToken);
+                    return FunctionListReply(functionNotationMatches);
+                }
+                else if (qnaResults.First().Context.Prompts.Length > 0) // 버튼을 만들어야 하는 지 확인해보도록 합니다.
+                {
+                    return GeneralReplyWithButton(replyText, qnaResults);
                 }
                 else // 버튼이 필요 없는 경우에 해당합니다.
                 {
-                    MatchCollection matches = Regex.Matches(replyText, "\\{\\{[ ]*[a-zA-Z0-9_\\.\\(\\)]*[ ]*\\}\\}");
-                    if (matches.Count > 0)
-                    {
-                        var card = new HeroCard
-                        {
-                            Text = "요청하신 내용과 관계있는 결과입니다.",
-                            Buttons = new List<CardAction>(),
-                        };
-                        foreach (Match match in matches)
-                        {
-                            string value = match.Value.Replace("{", "").Replace("}", "").Trim();
-                            card.Buttons.Add(new CardAction(ActionTypes.ImBack, title: value, value: value));
-                        }
-                        var reply = MessageFactory.Attachment(card.ToAttachment());
-                        await turnContext.SendActivityAsync(reply, cancellationToken);
-                    }
-                    else
-                    {
-                        var reply = MessageFactory.Text(replyText, replyText);
-                        await turnContext.SendActivityAsync(reply, cancellationToken);
-                    }
+                    return MessageFactory.Text(replyText, replyText);
                 }
             }
+            else // QnAMaker로는 답변을 찾을 수 없는 경우에 사용됩니다.
+            {
+                return NoAnswerReply(replyText);
+            }
+        }
+
+        private async Task<QueryResult[]> ClarifyUsingLuis(ITurnContext<IMessageActivity> turnContext, QueryResult[] queryResult)
+        {
+            string predictionKey = Configuration.GetValue<string>("LuisPredictionKey");
+            string predictionEndPoint = Configuration.GetValue<string>("LuisPredictionEndPoint");
+            string appId = Configuration.GetValue<string>("LuisId");
+            JObject json = await makeRequest(predictionKey, predictionEndPoint, appId, turnContext.Activity.Text);
+            var topIntent = json["prediction"].Value<string>("topIntent");
+            var prediction = json["prediction"]["intents"][topIntent].Value<Double>("score");
+            turnContext.Activity.Text = topIntent;
+            if (turnContext.Activity.Text != "None" && prediction > 0.6) // "None"은 LUIS도 모르는 질의문을 의미합니다.
+            {
+                queryResult = await EchoBotQnA.GetAnswersAsync(turnContext);
+            }
+            return queryResult;
+        }
+
+        private static IMessageActivity GeneralReplyWithButton(string replyText, QueryResult[] queryResult)
+        {
+            var card = new HeroCard
+            {
+                Text = replyText,
+                Buttons = new List<CardAction>(),
+            };
+            foreach (var prompt in queryResult.First().Context.Prompts)
+            {
+                card.Buttons.Add(new CardAction(ActionTypes.ImBack, title: prompt.DisplayText, value: prompt.DisplayText));
+            }
+            return MessageFactory.Attachment(card.ToAttachment());
+        }
+
+        private static IMessageActivity FunctionListReply(MatchCollection matches)
+        {
+            var card = new HeroCard
+            {
+                Text = "요청하신 내용과 관계있는 결과입니다.",
+                Buttons = new List<CardAction>(),
+            };
+            foreach (Match match in matches)
+            {
+                string value = match.Value.Replace("{", "").Replace("}", "").Trim();
+                string title = value + "()";
+                card.Buttons.Add(new CardAction(ActionTypes.ImBack, title: title, value: value));
+            }
+            return MessageFactory.Attachment(card.ToAttachment());
+        }
+
+        private static IMessageActivity NoAnswerReply(string replyText)
+        {
+            replyText = $"제 정보망은 가지고 있지 않네요.(함수의 경우 정확성 향상을 위해 함수 전후로 공백을 부여해주세요!) ==> {replyText}";
+            return MessageFactory.Text(replyText, replyText);
         }
 
 #if DEFAULT_MEMBER_ADD
